@@ -103,7 +103,7 @@ module Spec
             def controller_path #:nodoc:
               self.class.name.underscore.gsub('_controller', '')
             end
-            include ControllerInstanceMethods
+            include Spec::Rails::Example::ControllerInstanceMethods
           end
           @controller.integrate_views! if @integrate_views
           @controller.session = session
@@ -177,90 +177,7 @@ module Spec
         def ensure_that_routes_are_loaded
           ActionController::Routing::Routes.reload if ActionController::Routing::Routes.empty?
         end
-
-        module ControllerInstanceMethods #:nodoc:
-          include Spec::Rails::Example::RenderObserver
-
-          # === render(options = nil, deprecated_status_or_extra_options = nil, &block)
-          #
-          # This gets added to the controller's singleton meta class,
-          # allowing Controller Examples to run in two modes, freely switching
-          # from context to context.
-          def render(options=nil, &block)
-              
-            unless block_given?
-              unless integrate_views?
-                if @template.respond_to?(:finder)
-                  (class << @template.finder; self; end).class_eval do
-                    define_method :file_exists? do; true; end
-                  end
-                else
-                  (class << @template; self; end).class_eval do
-                    define_method :file_exists? do; true; end
-                  end
-                end
-                (class << @template; self; end).class_eval do
-                  define_method :render_file do |*args|
-                    @first_render ||= args[0] unless args[0] =~ /^layouts/
-                    @_first_render ||= args[0] unless args[0] =~ /^layouts/
-                  end
-                  
-                  define_method :_pick_template do |*args|
-                    @_first_render ||= args[0] unless args[0] =~ /^layouts/
-                    PickedTemplate.new
-                  end
-                  
-                  define_method :render do |*args|
-                    if @_rendered
-                      opts = args[0]
-                      (@_rendered[:template] ||= opts[:file]) if opts[:file]
-                      (@_rendered[:partials][opts[:partial]] += 1) if opts[:partial]
-                    else
-                      super
-                    end
-                  end
-                end
-              end
-            end
-
-            if matching_message_expectation_exists(options)
-              render_proxy.render(options, &block)
-              @performed_render = true
-            else
-              if matching_stub_exists(options)
-                @performed_render = true
-              else
-                super(options, &block)
-              end
-            end
-          end
-          
-          def response(&block)
-            # NOTE - we're setting @update for the assert_select_spec - kinda weird, huh?
-            @update = block
-            @_response || @response
-          end
-
-          def integrate_views!
-            @integrate_views = true
-          end
-
-          private
-
-          def integrate_views?
-            @integrate_views
-          end
-
-          def matching_message_expectation_exists(options)
-            render_proxy.send(:__mock_proxy).send(:find_matching_expectation, :render, options)
-          end
-        
-          def matching_stub_exists(options)
-            render_proxy.send(:__mock_proxy).send(:find_matching_method_stub, :render, options)
-          end
-        
-        end
-
+            
         Spec::Example::ExampleGroupFactory.register(:controller, self)
       end
       
@@ -270,6 +187,89 @@ module Spec
         def render_template(*ignore_args); end
         # Do nothing when running controller examples in isolation mode.
         def render_partial(*ignore_args);  end
+      end
+
+      module ControllerInstanceMethods #:nodoc:
+        include Spec::Rails::Example::RenderObserver
+
+        # === render(options = nil, deprecated_status_or_extra_options = nil, &block)
+        #
+        # This gets added to the controller's singleton meta class,
+        # allowing Controller Examples to run in two modes, freely switching
+        # from context to context.
+        def render(options=nil, &block)
+            
+          unless block_given?
+            unless integrate_views?
+              if @template.respond_to?(:finder)
+                (class << @template.finder; self; end).class_eval do
+                  define_method :file_exists? do; true; end
+                end
+              else
+                (class << @template; self; end).class_eval do
+                  define_method :file_exists? do; true; end
+                end
+              end
+              (class << @template; self; end).class_eval do
+                define_method :render_file do |*args|
+                  @first_render ||= args[0] unless args[0] =~ /^layouts/
+                  @_first_render ||= args[0] unless args[0] =~ /^layouts/
+                end
+                
+                define_method :_pick_template do |*args|
+                  @_first_render ||= args[0] unless args[0] =~ /^layouts/
+                  PickedTemplate.new
+                end
+                
+                define_method :render do |*args|
+                  if @_rendered
+                    opts = args[0]
+                    (@_rendered[:template] ||= opts[:file]) if opts[:file]
+                    (@_rendered[:partials][opts[:partial]] += 1) if opts[:partial]
+                  else
+                    super
+                  end
+                end
+              end
+            end
+          end
+
+          if matching_message_expectation_exists(options)
+            render_proxy.render(options, &block)
+            @performed_render = true
+          else
+            if matching_stub_exists(options)
+              @performed_render = true
+            else
+              super(options, &block)
+            end
+          end
+        end
+        
+        def response(&block)
+          # NOTE - we're setting @update for the assert_select_spec - kinda weird, huh?
+          @update = block
+          @_response || @response
+        end
+
+        def integrate_views!
+          @integrate_views = true
+        end
+
+        private
+
+        def integrate_views?
+          @integrate_views
+        end
+
+        def matching_message_expectation_exists(options)
+          render_proxy.send(:__mock_proxy).send(:find_matching_expectation, :render, options)
+        end
+      
+        def matching_stub_exists(options)
+          render_proxy.send(:__mock_proxy).send(:find_matching_method_stub, :render, options)
+        end
+      
       end
     end
   end
